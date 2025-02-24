@@ -1,0 +1,23 @@
+{
+  "name": "Flutterappmedigo",
+  "version": "1.0.0",
+  "lockfileVersion": 3,
+  "requires": true,
+  "author": "",
+  "description": "Backend service for Flutter app to send QR codes via email",
+  "keywords": [],
+  "license": "ISC",
+  "main": "index.js",
+  "packages": {},
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "body-parser": "^1.20.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "multer": "^1.4.5-lts.1",
+    "nodemailer": "^6.9.16"
+  }
+}
