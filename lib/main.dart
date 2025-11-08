@@ -1,13 +1,24 @@
-import 'package:flutter/material.dart';
 import 'dart:async';
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:provider/provider.dart';
+import 'Onboard.dart';
+import 'translation_provider.dart';
 
-import 'package:flutterappmedigo/Onboard.dart';
-
-void main() {
-  runApp(MyApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => TranslationProvider(),
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -41,7 +52,6 @@ class _SplashScreenState extends State<SplashScreen>
       vsync: this,
     )..repeat(reverse: true);
 
-    // Timer to animate the letters
     letterTimer = Timer.periodic(Duration(milliseconds: 300), (timer) {
       setState(() {
         if (currentLetterIndex < letters.length - 1) {
@@ -52,13 +62,39 @@ class _SplashScreenState extends State<SplashScreen>
       });
     });
 
-    // Navigate to OnBoardingScreen after 4 seconds
-    Future.delayed(Duration(seconds: 4), () {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => OnBoardingScreen()),
-      );
-    });
+    loadTranslationsAndNavigate();
+  }
+
+  Future<void> loadTranslationsAndNavigate() async {
+    final provider = Provider.of<TranslationProvider>(context, listen: false);
+
+    try {
+      await uploadTranslationsToFirestore(); // 🔁 Upload translations
+      await provider.load('ar'); // 🌐 Load language ('en' or 'ar')
+    } catch (e) {
+      print("❌ Translation load failed: $e");
+    }
+
+    await Future.delayed(Duration(seconds: 2));
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => OnBoardingScreen()),
+    );
+  }
+
+  Future<void> uploadTranslationsToFirestore() async {
+    final url = Uri.parse('http://10.0.2.2:8000/translations/upload_all');
+    try {
+      final response = await http.post(url);
+      if (response.statusCode == 200) {
+        print("✅ Translations uploaded: ${response.body}");
+      } else {
+        print("❌ Upload failed: ${response.statusCode} ${response.body}");
+      }
+    } catch (e) {
+      print("🔥 Upload error: $e");
+    }
   }
 
   @override
@@ -75,32 +111,28 @@ class _SplashScreenState extends State<SplashScreen>
         child: Stack(
           alignment: Alignment.center,
           children: [
-            // Background gradient
             Container(
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Color(0xFF64B5F6), // Light blue
-                    Color(0xFF1976D2), // Medium blue
-                    Color(0xFF0D47A1), // Dark blue
+                    Color(0xFF64B5F6),
+                    Color(0xFF1976D2),
+                    Color(0xFF0D47A1),
                   ],
                 ),
               ),
             ),
-            // Animated "MediG" with heartbeat image and heart
             Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    // Display "Medi"
                     ...List.generate(letters.length, (index) {
                       return AnimatedDefaultTextStyle(
-                        duration: Duration(milliseconds: 300),
+                        duration: const Duration(milliseconds: 300),
                         style: TextStyle(
                           fontSize: 40,
                           fontWeight: FontWeight.bold,
@@ -111,9 +143,8 @@ class _SplashScreenState extends State<SplashScreen>
                         child: Text(letters[index]),
                       );
                     }),
-                    // Heartbeat image
                     AnimatedOpacity(
-                      duration: Duration(milliseconds: 300),
+                      duration: const Duration(milliseconds: 300),
                       opacity: currentLetterIndex >= letters.length - 1 ? 1.0 : 0.0,
                       child: Image.asset(
                         'Images/heart_beats.png',
@@ -121,9 +152,8 @@ class _SplashScreenState extends State<SplashScreen>
                         height: 70,
                       ),
                     ),
-                    // Display "G"
                     AnimatedDefaultTextStyle(
-                      duration: Duration(milliseconds: 400),
+                      duration: const Duration(milliseconds: 400),
                       style: TextStyle(
                         fontSize: 40,
                         fontWeight: FontWeight.bold,
@@ -131,9 +161,8 @@ class _SplashScreenState extends State<SplashScreen>
                             ? Colors.white
                             : Colors.transparent,
                       ),
-                      child: Text('GO'),
+                      child: const Text('GO'),
                     ),
-                    // Heartbeat image
                     HeartbeatImage(controller: _controller),
                   ],
                 ),
@@ -149,7 +178,7 @@ class _SplashScreenState extends State<SplashScreen>
 class HeartbeatImage extends StatelessWidget {
   final AnimationController controller;
 
-  HeartbeatImage({required this.controller});
+  const HeartbeatImage({required this.controller});
 
   @override
   Widget build(BuildContext context) {

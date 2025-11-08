@@ -1,437 +1,199 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart'; // Import for date parsing and formatting
+import 'package:http/http.dart' as http;
+import 'package:provider/provider.dart';
+import 'translation_provider.dart';
 
-// Model for Measurement
-class Measurement {
-  final double weight;
-  final double height;
-  final double bmi;
-  final String measurementType;
-  final String measurementValue;
-  final String measurementDate;
+class MyMeasurementsOnlyScreen extends StatefulWidget {
+  final String token;
+  final String userId;
+  final String facilityId;
+  final String facilityType;
+  final bool isFacility;
+  final bool isdoctor;
 
-  Measurement({
-    required this.weight,
-    required this.height,
-    required this.bmi,
-    required this.measurementType,
-    required this.measurementValue,
-    required this.measurementDate,
-  });
-}
+  const MyMeasurementsOnlyScreen({
+    Key? key,
+    required this.token,
+    required this.userId,
+    required this.facilityId,
+    required this.facilityType,
+    required this.isFacility,
+    required this.isdoctor,
+  }) : super(key: key);
 
-class MyMeasurementScreen extends StatefulWidget {
   @override
-  _MyMeasurementScreenState createState() => _MyMeasurementScreenState();
+  State<MyMeasurementsOnlyScreen> createState() => _MyMeasurementsOnlyScreenState();
 }
 
-class _MyMeasurementScreenState extends State<MyMeasurementScreen> {
-  final List<Measurement> measurementList = [
-    Measurement(
-      weight: 70.0,
-      height: 170.0,
-      bmi: 24.2,
-      measurementType: "Blood Pressure",
-      measurementValue: "120/80 mmHg",
-      measurementDate: "21-12-2024",
-    ),
-  ];
+class _MyMeasurementsOnlyScreenState extends State<MyMeasurementsOnlyScreen> {
+  double height = 0;
+  double weight = 0;
+  double bmi = 0;
+  bool loading = true;
 
-  final _measurementValueController = TextEditingController();
-  final _measurementDateController = TextEditingController();
-  String _selectedMeasurementType = "Blood Pressure";
-  bool _isAddMeasurementVisible = false;
+  final String baseUrl = "http://10.0.2.2:8000";
 
-  final Color darkBlue = const Color(0xFF021229);
+  bool get _canEdit => true;
 
-  void _toggleAddMeasurementForm() {
-    setState(() {
-      _isAddMeasurementVisible = !_isAddMeasurementVisible;
-    });
+  @override
+  void initState() {
+    super.initState();
+    _fetchHeightWeight();
   }
 
-  void _addMeasurement() {
-    if (_measurementValueController.text.isNotEmpty &&
-        _measurementDateController.text.isNotEmpty) {
-      setState(() {
-        measurementList.add(Measurement(
-          weight: 0.0,
-          height: 0.0,
-          bmi: 0.0,
-          measurementType: _selectedMeasurementType,
-          measurementValue: _measurementValueController.text,
-          measurementDate: _measurementDateController.text,
-        ));
-
-        _measurementValueController.clear();
-        _measurementDateController.clear();
-        _selectedMeasurementType = "Blood Pressure";
-        _isAddMeasurementVisible = false;
-      });
-    }
-  }
-
-  void _editWeightHeight(double weight, double height) {
-    setState(() {
-      final double bmi =
-      (weight > 0 && height > 0) ? weight / ((height / 100) * (height / 100)) : 0;
-      measurementList[0] = Measurement(
-        weight: weight,
-        height: height,
-        bmi: bmi,
-        measurementType: measurementList[0].measurementType,
-        measurementValue: measurementList[0].measurementValue,
-        measurementDate: measurementList[0].measurementDate,
+  Future<void> _fetchHeightWeight() async {
+    try {
+      final response = await http.get(
+        Uri.parse("$baseUrl/measurements/body/${widget.userId}"),
+        headers: {
+          "Authorization": "Bearer ${widget.token}",
+          "Content-Type": "application/json",
+        },
       );
-    });
-  }
 
-  Future<void> _pickDate() async {
-    final DateTime? pickedDate = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2101),
-    );
-
-    if (pickedDate != null) {
-      setState(() {
-        _measurementDateController.text =
-        "${pickedDate.day}-${pickedDate.month}-${pickedDate.year}";
-      });
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        setState(() {
+          height = (data['height'] ?? 0).toDouble();
+          weight = (data['weight'] ?? 0).toDouble();
+          bmi = (data['bmi'] ?? 0).toDouble();
+          loading = false;
+        });
+      } else {
+        throw Exception("Failed to load data");
+      }
+    } catch (e) {
+      setState(() => loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title:
-        Text("Clinical Indicators", style: TextStyle(color: Colors.white)),
-        backgroundColor: Color(0xFF02597A),
-      ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFFE3F2FD), // Light Blue
-              Colors.white,
-            ],
-          ),
-        ),
-        child: Column(
+  Future<void> _updateHeightWeight(double newWeight, double newHeight) async {
+    final t = context.read<TranslationProvider>().t;
+    try {
+      final response = await http.post(
+        Uri.parse("$baseUrl/measurements/body/${widget.userId}"),
+        headers: {
+          "Authorization": "Bearer ${widget.token}",
+          "Content-Type": "application/json",
+        },
+        body: jsonEncode({
+          "height": newHeight,
+          "weight": newWeight,
+          "added_by": widget.facilityId,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        _fetchHeightWeight();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t("updateSuccess"))));
+      } else {
+        final error = jsonDecode(response.body);
+        throw Exception(error['detail'] ?? t("error"));
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+    }
+  }
+
+  void _showEditDialog() {
+    final heightCtrl = TextEditingController(text: height.toStringAsFixed(1));
+    final weightCtrl = TextEditingController(text: weight.toStringAsFixed(1));
+    final t = context.read<TranslationProvider>().t;
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(t("editRecord")),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Toggle measurement form button.
-                  ElevatedButton(
-                    onPressed: _toggleAddMeasurementForm,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: darkBlue,
-                      side: BorderSide(color: darkBlue),
-                    ),
-                    child: Text(
-                      _isAddMeasurementVisible ? "Cancel" : "Add Measurement",
-                      style: TextStyle(color: darkBlue),
-                    ),
-                  ),
-                  // AnimatedSwitcher for measurement form.
-                  AnimatedSwitcher(
-                    duration: Duration(milliseconds: 300),
-                    child: _isAddMeasurementVisible
-                        ? Container(
-                      key: ValueKey("addMeasurementForm"),
-                      padding: EdgeInsets.all(16),
-                      margin: EdgeInsets.only(top: 16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black12,
-                            blurRadius: 6,
-                            offset: Offset(0, 2),
-                          )
-                        ],
-                      ),
-                      child: Column(
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: DropdownButtonFormField<String>(
-                                  value: _selectedMeasurementType,
-                                  decoration: InputDecoration(
-                                    labelText: "Measurement Type",
-                                    labelStyle:
-                                    TextStyle(color: darkBlue),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderSide: BorderSide(
-                                          color: darkBlue),
-                                    ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderSide: BorderSide(
-                                          color: darkBlue),
-                                    ),
-                                  ),
-                                  style: TextStyle(color: darkBlue),
-                                  items: [
-                                    "Blood Pressure",
-                                    "Blood Glucose",
-                                    "Heart Rate"
-                                  ].map((String value) {
-                                    return DropdownMenuItem<String>(
-                                      value: value,
-                                      child: Text(value,
-                                          style: TextStyle(
-                                              color: darkBlue)),
-                                    );
-                                  }).toList(),
-                                  onChanged: (value) {
-                                    setState(() {
-                                      _selectedMeasurementType = value!;
-                                    });
-                                  },
-                                ),
-                              ),
-                              SizedBox(width: 8),
-                              Expanded(
-                                child: TextField(
-                                  controller: _measurementValueController,
-                                  style: TextStyle(color: darkBlue),
-                                  decoration: InputDecoration(
-                                    labelText: "Value",
-                                    labelStyle:
-                                    TextStyle(color: darkBlue),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderSide: BorderSide(
-                                          color: darkBlue),
-                                    ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderSide: BorderSide(
-                                          color: darkBlue),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          SizedBox(height: 8),
-                          GestureDetector(
-                            onTap: _pickDate,
-                            child: AbsorbPointer(
-                              child: TextField(
-                                controller: _measurementDateController,
-                                style: TextStyle(color: darkBlue),
-                                decoration: InputDecoration(
-                                  labelText: "Date",
-                                  labelStyle:
-                                  TextStyle(color: darkBlue),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(
-                                        color: darkBlue),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(
-                                        color: darkBlue),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          SizedBox(height: 16),
-                          ElevatedButton(
-                            onPressed: _addMeasurement,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Color(0xFF02597A),
-                            ),
-                            child: Text("Save Measurement",
-                                style: TextStyle(color: Colors.white)),
-                          ),
-                        ],
-                      ),
-                    )
-                        : SizedBox.shrink(key: ValueKey("empty")),
-                  ),
-                ],
-              ),
+            TextField(
+              controller: weightCtrl,
+              decoration: InputDecoration(labelText: t("weightLabel")),
+              keyboardType: TextInputType.number,
             ),
-            Expanded(
-              child: ListView.builder(
-                itemCount: measurementList.length,
-                itemBuilder: (context, index) {
-                  return index == 0
-                      ? WeightHeightCard(
-                    weight: measurementList[index].weight,
-                    height: measurementList[index].height,
-                    bmi: measurementList[index].bmi,
-                    onEdit: _editWeightHeight,
-                  )
-                      : MeasurementCard(
-                    measurement: measurementList[index],
-                  );
-                },
-              ),
+            TextField(
+              controller: heightCtrl,
+              decoration: InputDecoration(labelText: t("heightLabel")),
+              keyboardType: TextInputType.number,
             ),
           ],
         ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              final newW = double.tryParse(weightCtrl.text) ?? weight;
+              final newH = double.tryParse(heightCtrl.text) ?? height;
+              _updateHeightWeight(newW, newH);
+              Navigator.pop(context);
+            },
+            child: Text(t("save")),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(t("cancel")),
+          ),
+        ],
       ),
     );
   }
-}
-
-class WeightHeightCard extends StatelessWidget {
-  final double weight;
-  final double height;
-  final double bmi;
-  final void Function(double, double) onEdit;
-
-  WeightHeightCard({
-    required this.weight,
-    required this.height,
-    required this.bmi,
-    required this.onEdit,
-  });
 
   @override
   Widget build(BuildContext context) {
-    final _weightController =
-    TextEditingController(text: weight.toStringAsFixed(1));
-    final _heightController =
-    TextEditingController(text: height.toStringAsFixed(1));
+    const darkBlue = Color(0xFF021229);
+    final t = context.read<TranslationProvider>().t;
 
-    final Color darkBlue = const Color(0xFF021229);
-
-    return Card(
-      margin: EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-      color: Colors.white,
-      elevation: 4,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
+    return Scaffold(
+      appBar: AppBar(
+        automaticallyImplyLeading: true, // ✅ Show back arrow
+        iconTheme: const IconThemeData(color: Colors.white),
+        title: Text(t("myMeasurements"), style: const TextStyle(color: Colors.white)),
+        backgroundColor: darkBlue,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.language, color: Colors.white),
+            onPressed: () {
+              final provider = context.read<TranslationProvider>();
+              final newLang = provider.currentLanguage == 'en' ? 'ar' : 'en';
+              provider.load(newLang);
+            },
+          ),
+        ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ListTile(
-            title: Text("Weight and Height",
-                style: TextStyle(
-                    fontWeight: FontWeight.bold, color: darkBlue)),
-            trailing: IconButton(
-              icon: Icon(Icons.edit, color: Color(0xFF02597A)),
-              onPressed: () {
-                showDialog(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: Text("Edit Weight and Height",
-                        style: TextStyle(color: darkBlue)),
-                    content: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        TextField(
-                          controller: _weightController,
-                          decoration: InputDecoration(
-                            labelText: "Weight (kg)",
-                            labelStyle: TextStyle(color: darkBlue),
-                          ),
-                          keyboardType: TextInputType.number,
-                        ),
-                        TextField(
-                          controller: _heightController,
-                          decoration: InputDecoration(
-                            labelText: "Height (cm)",
-                            labelStyle: TextStyle(color: darkBlue),
-                          ),
-                          keyboardType: TextInputType.number,
-                        ),
-                      ],
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () {
-                          final double newWeight =
-                              double.tryParse(_weightController.text) ??
-                                  weight;
-                          final double newHeight =
-                              double.tryParse(_heightController.text) ??
-                                  height;
-                          onEdit(newWeight, newHeight);
-                          Navigator.of(context).pop();
-                        },
-                        child: Text("Save",
-                            style: TextStyle(color: darkBlue)),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: Text("Cancel",
-                            style: TextStyle(color: darkBlue)),
-                      ),
-                    ],
-                  ),
-                );
-              },
+      body: loading
+          ? const Center(child: CircularProgressIndicator())
+          : Card(
+        margin: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            ListTile(
+              title: Text(
+                t("heightWeight"),
+                style: const TextStyle(fontWeight: FontWeight.bold, color: darkBlue),
+              ),
+              trailing: _canEdit
+                  ? IconButton(
+                icon: const Icon(Icons.edit, color: darkBlue),
+                onPressed: _showEditDialog,
+              )
+                  : null,
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Text("Weight: ${weight.toStringAsFixed(1)} kg",
-                style: TextStyle(color: darkBlue)),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Text("Height: ${height.toStringAsFixed(1)} cm",
-                style: TextStyle(color: darkBlue)),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Text("BMI: ${bmi.toStringAsFixed(1)}",
-                style: TextStyle(color: darkBlue)),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class MeasurementCard extends StatelessWidget {
-  final Measurement measurement;
-
-  MeasurementCard({required this.measurement});
-
-  @override
-  Widget build(BuildContext context) {
-    final Color darkBlue = const Color(0xFF021229);
-    return Card(
-      margin: EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-      color: Colors.white,
-      elevation: 4,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ListTile(
-            title: Text("Measurement Date: ${measurement.measurementDate}",
-                style: TextStyle(
-                    fontWeight: FontWeight.bold, color: darkBlue)),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Text("Type: ${measurement.measurementType}",
-                style: TextStyle(color: darkBlue)),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Text("Value: ${measurement.measurementValue}",
-                style: TextStyle(color: darkBlue)),
-          ),
-        ],
+            ListTile(
+              title: Text("${t("height")}: ${height.toStringAsFixed(1)} cm",
+                  style: const TextStyle(color: darkBlue)),
+            ),
+            ListTile(
+              title: Text("${t("weight")}: ${weight.toStringAsFixed(1)} kg",
+                  style: const TextStyle(color: darkBlue)),
+            ),
+            ListTile(
+              title: Text("${t("bmi")}: ${bmi.toStringAsFixed(1)}",
+                  style: const TextStyle(color: darkBlue)),
+            ),
+          ],
+        ),
       ),
     );
   }

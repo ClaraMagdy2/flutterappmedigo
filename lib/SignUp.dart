@@ -1,9 +1,16 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutterappmedigo/Components/dropdown.dart';
-import 'package:flutterappmedigo/Components/textfield.dart';
-import 'dart:io'; // For file handling
 import 'package:flutter/services.dart';
-import 'package:flutterappmedigo/qr.dart';
+import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+
+import 'Login.dart';
+import 'qr.dart';
+import 'Components/dropdown.dart';
+import 'Components/textfield.dart';
+import 'translation_provider.dart';
 
 class SignUpScreen extends StatefulWidget {
   @override
@@ -13,7 +20,6 @@ class SignUpScreen extends StatefulWidget {
 class _SignUpScreenState extends State<SignUpScreen> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
-  // TextEditingControllers
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _nationalIdController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
@@ -22,21 +28,15 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final TextEditingController _birthdayController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
   final TextEditingController _cityController = TextEditingController();
+  final TextEditingController _regionController = TextEditingController();
+  final TextEditingController _cigsPerDayController = TextEditingController();
+  final TextEditingController _doctorEmailController = TextEditingController();
 
-  // Dropdown values
-  String? _gender;
-  String? _maritalStatus;
-
-  // Image variables
+  String _gender = '';
+  String _maritalStatus = '';
+  String _bloodGroup = '';
+  bool _currentSmoker = false;
   File? _profileImage;
-
-  // Define your custom colors
-  final Color darkBlue = const Color(0xFF021229);
-  final Color deepDarkBlue = const Color(0xFF043459);
-  // For the background gradient, we use light blue shades
-  static const Color lightBlueStart = Color(0xFFE3F2FD);
-  static const Color lightBlueMid = Color(0xFFBBDEFB);
-  static const Color lightBlueEnd = Color(0xFFFFFFFF);
 
   static const platform = MethodChannel('com.example.myapp/image_picker');
 
@@ -44,264 +44,260 @@ class _SignUpScreenState extends State<SignUpScreen> {
     try {
       final String? imagePath = await platform.invokeMethod('pickImage');
       if (imagePath != null) {
+        String realPath = imagePath.startsWith('content://')
+            ? await platform.invokeMethod('getAbsolutePath', imagePath)
+            : imagePath;
         setState(() {
-          _profileImage = File(imagePath);
+          _profileImage = File(realPath);
         });
       }
     } on PlatformException catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to pick image: ${e.message}')),
-      );
+      _showSnackBar('Failed to pick image: ${e.message}');
     }
+  }
+
+  String formatDateForBackend(String inputDate) {
+    try {
+      final DateTime parsed = DateFormat('yyyy-MM-dd').parseStrict(inputDate);
+      return DateFormat('yyyy-MM-dd').format(parsed);
+    } catch (e) {
+      throw FormatException("Invalid date format. Use yyyy-MM-dd.");
+    }
+  }
+
+  String? requiredValidator(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'This field is required';
+    }
+    return null;
+  }
+
+  Future<void> registerUser() async {
+    if (!_formKey.currentState!.validate()) {
+      _showSnackBar("Please complete the form correctly.");
+      return;
+    }
+
+    if (_gender.isEmpty || _bloodGroup.isEmpty || _maritalStatus.isEmpty) {
+      _showSnackBar("Please select gender, blood group, and marital status.");
+      return;
+    }
+
+    if (_currentSmoker) {
+      final cigs = _cigsPerDayController.text.trim();
+      if (cigs.isEmpty || int.tryParse(cigs) == null || int.parse(cigs) <= 0) {
+        _showSnackBar("Please enter valid cigs per day for smokers.");
+        return;
+      }
+    } else {
+      _cigsPerDayController.text = "0";
+    }
+
+    String formattedDate;
+    try {
+      formattedDate = formatDateForBackend(_birthdayController.text);
+    } catch (e) {
+      _showSnackBar(e.toString());
+      return;
+    }
+
+    // Prepare the body of the request
+    final url = Uri.parse('http://10.0.2.2:8000/users/');
+    final bytes = _profileImage != null ? await _profileImage!.readAsBytes() : null;
+    final base64Image = bytes != null ? base64Encode(bytes) : null; // Send null if no image is provided
+
+    final body = jsonEncode({
+      "national_id": _nationalIdController.text,
+      "full_name": _nameController.text,
+      "email": _emailController.text,
+      "password": _passwordController.text,
+      "birthdate": formattedDate,
+      "gender": _gender.toLowerCase(),
+      "phone_number": _phoneController.text,
+      "blood_group": _bloodGroup,
+      "address": _addressController.text,
+      "region": _regionController.text,
+      "city": _cityController.text,
+      "marital_status": _maritalStatus.toLowerCase(),
+      "profile_photo": base64Image, // Send null or empty string if no image is selected
+      "current_smoker": _currentSmoker,
+      "cigs_per_day": int.parse(_cigsPerDayController.text),
+      "doctoremail": _doctorEmailController.text.trim(),
+    });
+
+    try {
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: body,
+      );
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        _showSnackBar("Registration successful.");
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => LoginScreen()),
+        );
+      } else {
+        _showSnackBar("Registration failed: ${response.body}");
+      }
+    } catch (e) {
+      _showSnackBar('Error: $e');
+    }
+  }
+
+  void _showSnackBar(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   @override
   Widget build(BuildContext context) {
+    final provider = Provider.of<TranslationProvider>(context);
+    final t = provider.t;
+
     return Scaffold(
-      // AppBar with gradient background remains the same
-      appBar: PreferredSize(
-        preferredSize: Size.fromHeight(kToolbarHeight),
-        child: AppBar(
-          title: const Text("Sign Up", style: TextStyle(color: Colors.white,fontSize: 30),textAlign:TextAlign.center,),
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.white),
-            onPressed: () {
-              Navigator.pop(context);
-            },
+      appBar: AppBar(
+        title: Text(t("sign_up"), style: const TextStyle(color: Colors.white)),
+        backgroundColor: const Color(0xFF043459),
+        leading: const BackButton(color: Colors.white),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.language, color: Colors.white),
+            onPressed: () => provider.toggleLanguage(),
+            tooltip: "Switch Language",
           ),
-          flexibleSpace: Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  Color(0xFF02597A),
-                  Color(0xFF043459),
-                  Color(0xFF021229),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-            ),
-          ),
-        ),
+        ],
       ),
-      body: Container(
-        // Overall gradient background for the screen
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              lightBlueStart,
-              lightBlueMid,
-              lightBlueEnd,
-            ],
-          ),
-        ),
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            // Wrap the form in a Card for a modern look
-            child: Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16.0),
-              ),
-              child: Padding(
-                padding:
-                const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      // Profile Image Upload Section
-                      GestureDetector(
-                        onTap: _pickImage,
-                        child: CircleAvatar(
-                          radius: 60,
-                          backgroundImage: _profileImage != null
-                              ? FileImage(_profileImage!)
-                              : null,
-                          child: _profileImage == null
-                              ? const Icon(Icons.add_a_photo,
-                              size: 50, color: Colors.white70)
-                              : null,
-                          backgroundColor: deepDarkBlue,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      // Other Form Fields
-                      buildTextFormField(
-                        controller: _nameController,
-                        hintText: "Full Name",
-                        prefix: const Icon(Icons.person),
-                        validator: (value) =>
-                        value!.isEmpty ? 'Please enter your name' : null,
-                      ),
-                      buildTextFormField(
-                        controller: _nationalIdController,
-                        hintText: "National ID",
-                        prefix: const Icon(Icons.badge),
-                        keyboardType: TextInputType.number,
-                        validator: (value) => value!.length != 14
-                            ? 'National ID must be 14 digits'
-                            : null,
-                      ),
-                      buildTextFormField(
-                        controller: _emailController,
-                        hintText: "Email",
-                        prefix: const Icon(Icons.email),
-                        keyboardType: TextInputType.emailAddress,
-                        validator: (value) =>
-                        value!.contains('@') ? null : 'Enter a valid email',
-                      ),
-                      buildTextFormField(
-                        controller: _passwordController,
-                        hintText: "Password",
-                        prefix: const Icon(Icons.lock),
-                        obscureText: true,
-                        validator: (value) => value!.length < 6
-                            ? 'Password must be at least 6 characters'
-                            : null,
-                      ),
-                      buildTextFormField(
-                        controller: _phoneController,
-                        hintText: "Phone Number",
-                        prefix: const Icon(Icons.phone),
-                        keyboardType: TextInputType.phone,
-                        validator: (value) =>
-                        value!.isEmpty ? 'Please enter your phone' : null,
-                      ),
-                      buildTextFormField(
-                        controller: _birthdayController,
-                        hintText: "Birthday (DD/MM/YYYY)",
-                        prefix: const Icon(Icons.cake),
-                        keyboardType: TextInputType.datetime,
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Please enter your Birthday';
-                          }
-                          final RegExp dateRegex = RegExp(
-                              r"^(0?[1-9]|[12][0-9]|3[01])/(0?[1-9]|1[0-2])/(19|20)\d{2}$");
-                          if (!dateRegex.hasMatch(value)) {
-                            return 'Enter date in DD/MM/YYYY format';
-                          }
-                          return null;
-                        },
-                      ),
-                      buildDropdownField(
-                        value: _gender,
-                        hintText: "Gender",
-                        prefixIcon: Icons.person_outline,
-                        items: const ["Male", "Female"],
-                        onChanged: (value) {
-                          setState(() {
-                            _gender = value;
-                          });
-                        },
-                      ),
-                      buildTextFormField(
-                        controller: _addressController,
-                        hintText: "Address",
-                        prefix: const Icon(Icons.home),
-                        validator: (value) => value!.isEmpty
-                            ? 'Please enter your Address'
-                            : null,
-                      ),
-                      buildTextFormField(
-                        controller: _cityController,
-                        hintText: "City",
-                        prefix: const Icon(Icons.location_city),
-                        validator: (value) =>
-                        value!.isEmpty ? 'Please enter your city' : null,
-                      ),
-                      buildDropdownField(
-                        value: _maritalStatus,
-                        hintText: "Marital Status",
-                        prefixIcon: Icons.family_restroom,
-                        items: const ["Single", "Married", "Divorced", "Widowed"],
-                        onChanged: (value) {
-                          setState(() {
-                            _maritalStatus = value;
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 20),
-                      // Generate QR Code Button as an outlined button
-                      OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          side: BorderSide(color: deepDarkBlue),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 15),
-                        ),
-                        onPressed: () {
-                          if (_nationalIdController.text.isEmpty ||
-                              _emailController.text.isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                    'National ID and Email are required!'),
-                              ),
-                            );
-                          } else {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => GenerateScreen(
-                                  nationalId: _nationalIdController.text,
-                                  email: _emailController.text,
-                                ),
-                              ),
-                            );
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content:
-                                  Text('Generate QR Code logic here!')),
-                            );
-                          }
-                        },
-                        child: Text(
-                          "Generate QR Code",
-                          style: TextStyle(color: darkBlue),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      // Sign-Up Button
-                      ElevatedButton(
-                        onPressed: () {
-                          if (_formKey.currentState!.validate()) {
-                            _showSnackBar('Registration Successful!');
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(
-                          minimumSize: const Size(double.infinity, 50),
-                          backgroundColor: deepDarkBlue,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        child: const Text(
-                          "Sign Up",
-                          style:
-                          TextStyle(fontSize: 18, color: Colors.white),
-                        ),
-                      ),
-                    ],
-                  ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            children: [
+              GestureDetector(
+                onTap: _pickImage,
+                child: CircleAvatar(
+                  radius: 50,
+                  backgroundImage: _profileImage != null ? FileImage(_profileImage!) : null,
+                  child: _profileImage == null
+                      ? const Icon(Icons.add_a_photo, size: 40, color: Colors.white70)
+                      : null,
+                  backgroundColor: const Color(0xFF043459),
                 ),
               ),
-            ),
+              const SizedBox(height: 20),
+              buildTextFormField(controller: _nameController, hintText: t("full_name"), prefix: const Icon(Icons.person), validator: requiredValidator),
+              buildTextFormField(controller: _nationalIdController, hintText: t("national_id"), prefix: const Icon(Icons.badge), validator: requiredValidator),
+              buildTextFormField(controller: _emailController, hintText: t("email"), prefix: const Icon(Icons.email), validator: requiredValidator),
+              buildTextFormField(controller: _passwordController, hintText: t("password"), obscureText: true, prefix: const Icon(Icons.lock), validator: requiredValidator),
+              buildTextFormField(controller: _phoneController, hintText: t("phone_number"), prefix: const Icon(Icons.phone), validator: requiredValidator),
+              buildTextFormField(
+                controller: _birthdayController,
+                hintText: t("birthday"),
+                prefix: const Icon(Icons.cake),
+                validator: requiredValidator,
+                onTap: () async {
+                  DateTime? picked = await showDatePicker(
+                    context: context,
+                    firstDate: DateTime(1800),
+                    lastDate: DateTime.now(),
+                  );
+                  if (picked != null) {
+                    _birthdayController.text = DateFormat('yyyy-MM-dd').format(picked);
+                  }
+                },
+              ),
+              buildTextFormField(controller: _regionController, hintText: t("region"), prefix: const Icon(Icons.map), validator: requiredValidator),
+              buildTextFormField(controller: _addressController, hintText: t("address"), prefix: const Icon(Icons.home), validator: requiredValidator),
+              buildTextFormField(controller: _cityController, hintText: t("city"), prefix: const Icon(Icons.location_city), validator: requiredValidator),
+
+              buildDropdownField(
+                value: _gender.isEmpty ? null : _gender,
+                hintText: t("gender"),
+                items: [t("male"), t("female")],
+                prefixIcon: Icons.transgender,
+                onChanged: (val) => setState(() => _gender = val ?? ''),
+              ),
+              buildDropdownField(
+                value: _bloodGroup.isEmpty ? null : _bloodGroup,
+                hintText: t("blood_group"),
+                items: ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"],
+                prefixIcon: Icons.water_drop,
+                onChanged: (val) => setState(() => _bloodGroup = val ?? ''),
+              ),
+              buildDropdownField(
+                value: _maritalStatus.isEmpty ? null : _maritalStatus,
+                hintText: t("marital_status"),
+                items: [t("single"), t("married"), t("divorced"), t("widowed")],
+                prefixIcon: Icons.family_restroom,
+                onChanged: (val) => setState(() => _maritalStatus = val ?? ''),
+              ),
+
+              SwitchListTile(
+                title: Text(t("smoker")),
+                value: _currentSmoker,
+                onChanged: (val) => setState(() => _currentSmoker = val),
+              ),
+
+              if (_currentSmoker)
+                buildTextFormField(
+                  controller: _cigsPerDayController,
+                  hintText: t("cigs_per_day"),
+                  prefix: const Icon(Icons.smoking_rooms),
+                  validator: requiredValidator,
+                ),
+
+              buildTextFormField(
+                controller: _doctorEmailController,
+                hintText: t("doctoremail"),
+                prefix: const Icon(Icons.local_hospital),
+                validator: (value) {
+                  if (value != null && value.trim().isNotEmpty && !value.contains("@")) {
+                    return "Enter a valid email";
+                  }
+                  return null; // valid or empty
+                },
+              ),
+
+              const SizedBox(height: 16),
+              OutlinedButton(
+                onPressed: () {
+                  final id = _nationalIdController.text.trim();
+                  final email = _emailController.text.trim();
+                  if (id.isEmpty || email.isEmpty) {
+                    _showSnackBar("Please enter national ID and email to generate QR.");
+                  } else {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => GenerateScreen(
+                          nationalId: id,
+                          email: email,
+                        ),
+                      ),
+                    );
+                  }
+                },
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Color(0xFF043459)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                ),
+                child: const Text("Generate QR", style: TextStyle(color: Color(0xFF021229))),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: registerUser,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF043459),
+                  minimumSize: const Size(double.infinity, 50),
+                ),
+                child: Text(t("sign_up"), style: const TextStyle(color: Colors.white, fontSize: 18)),
+              ),
+            ],
           ),
         ),
       ),
     );
-  }
-
-  void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
   }
 }

@@ -1,319 +1,308 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:http/http.dart' as http;
+import 'translation_provider.dart'; // Make sure this file is created
 
 class EmergencyContact {
+  final String? id;
+  final String userId;
   final String fullName;
   final String relationship;
   final String phoneNumber;
 
   EmergencyContact({
+    this.id,
+    required this.userId,
     required this.fullName,
     required this.relationship,
     required this.phoneNumber,
   });
+
+  factory EmergencyContact.fromJson(Map<String, dynamic> json) {
+    return EmergencyContact(
+      id: json['id'],
+      userId: json['user_id'] ?? '',
+      fullName: json['full_name'] ?? '',
+      relationship: json['relationship'] ?? '',
+      phoneNumber: json['phone_number'] ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'user_id': userId,
+    'full_name': fullName,
+    'relationship': relationship,
+    'phone_number': phoneNumber,
+  };
 }
 
-class MyEmergencyContactScreen extends StatefulWidget {
-  @override
-  _MyEmergencyContactScreenState createState() =>
-      _MyEmergencyContactScreenState();
-}
+class EmergencyContactApiService {
+  final String baseUrl = "http://10.0.2.2:8000";
+  final String token;
 
-class _MyEmergencyContactScreenState extends State<MyEmergencyContactScreen> {
-  final _formKey = GlobalKey<FormState>();
-  final TextEditingController _fullNameController = TextEditingController();
-  final TextEditingController _relationshipController = TextEditingController();
-  final TextEditingController _phoneNumberController = TextEditingController();
+  EmergencyContactApiService({required this.token});
 
-  List<EmergencyContact> emergencyContacts = [
-    EmergencyContact(
-      fullName: "John Doe",
-      relationship: "Brother",
-      phoneNumber: "+20 123 456 7890",
-    ),
-    EmergencyContact(
-      fullName: "Jane Doe",
-      relationship: "Mother",
-      phoneNumber: "+20 987 654 3210",
-    ),
-  ];
+  Map<String, String> _headers() => {
+    'Authorization': 'Bearer $token',
+    'Content-Type': 'application/json',
+  };
 
-  bool isFormVisible = false;
-  int? _editingIndex;
-
-  void _addOrEditEmergencyContact() {
-    if (_formKey.currentState?.validate() ?? false) {
-      setState(() {
-        if (_editingIndex == null) {
-          emergencyContacts.add(EmergencyContact(
-            fullName: _fullNameController.text,
-            relationship: _relationshipController.text,
-            phoneNumber: _phoneNumberController.text,
-          ));
-        } else {
-          emergencyContacts[_editingIndex!] = EmergencyContact(
-            fullName: _fullNameController.text,
-            relationship: _relationshipController.text,
-            phoneNumber: _phoneNumberController.text,
-          );
-        }
-        _clearForm();
-      });
+  Future<List<EmergencyContact>> fetchContacts(String userId) async {
+    final response = await http.get(
+      Uri.parse("$baseUrl/emergency-contacts/$userId"),
+      headers: _headers(),
+    );
+    if (response.statusCode == 200) {
+      List data = jsonDecode(response.body);
+      return data.map((e) => EmergencyContact.fromJson(e)).toList();
+    } else {
+      throw Exception("Failed to fetch: ${response.body}");
     }
   }
 
-  void _editEmergencyContact(int index) {
-    setState(() {
-      _editingIndex = index;
-      isFormVisible = true;
-      _fullNameController.text = emergencyContacts[index].fullName;
-      _relationshipController.text = emergencyContacts[index].relationship;
-      _phoneNumberController.text = emergencyContacts[index].phoneNumber;
-    });
-  }
-
-  void _deleteEmergencyContact(int index) {
-    setState(() {
-      emergencyContacts.removeAt(index);
-    });
-  }
-
-  void _clearForm() {
-    _fullNameController.clear();
-    _relationshipController.clear();
-    _phoneNumberController.clear();
-    isFormVisible = false;
-    _editingIndex = null;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text("My Emergency Contact", style: TextStyle(color: Colors.white)),
-        backgroundColor: Color(0xFF02597A),
-      ),
-      body: Container(
-        padding: EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF02597A),
-              Color(0xFF043459),
-              Color(0xFF021229),
-            ],
-          ),
-        ),
-        child: Column(
-          children: [
-            if (!isFormVisible)
-              ElevatedButton(
-                onPressed: () {
-                  setState(() {
-                    isFormVisible = true;
-                  });
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                ),
-                child: Text(
-                  "Add Emergency Contact",
-                  style: TextStyle(color: Color(0xFF021229)),
-                ),
-              ),
-            if (isFormVisible)
-              AnimatedContainer(
-                duration: Duration(milliseconds: 300),
-                curve: Curves.easeInOut,
-                padding: EdgeInsets.symmetric(vertical: 10, horizontal: 20),
-                decoration: BoxDecoration(
-                  color: Color(0xFF043459),
-                  borderRadius: BorderRadius.circular(15),
-                ),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    children: [
-                      _buildTextFormField(
-                        controller: _fullNameController,
-                        label: "Full Name",
-                        validator: "Please enter the full name",
-                      ),
-                      SizedBox(height: 12),
-                      _buildTextFormField(
-                        controller: _relationshipController,
-                        label: "Relationship",
-                        validator: "Please enter the relationship",
-                      ),
-                      SizedBox(height: 12),
-                      _buildTextFormField(
-                        controller: _phoneNumberController,
-                        label: "Phone Number",
-                        validator: "Please enter the phone number",
-                        maxLines: 1,
-                      ),
-                      SizedBox(height: 20),
-                      ElevatedButton(
-                        onPressed: _addOrEditEmergencyContact,
-                        child: Text("Save Emergency Contact", style: TextStyle(color: Color(0xFF021229))),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            // Wrap the ListView with Expanded
-            Expanded(
-              child: ListView.builder(
-                itemCount: emergencyContacts.length,
-                itemBuilder: (context, index) {
-                  return EmergencyContactCard(
-                    emergencyContact: emergencyContacts[index],
-                    onEdit: () => _editEmergencyContact(index),
-                    onDelete: () => _deleteEmergencyContact(index),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
+  Future<void> createContact(EmergencyContact c) async {
+    final response = await http.post(
+      Uri.parse("$baseUrl/emergency-contacts/${c.userId}"),
+      headers: _headers(),
+      body: jsonEncode(c.toJson()),
     );
+    if (response.statusCode != 200) {
+      throw Exception("Failed to create: ${response.body}");
+    }
   }
 
-  Widget _buildTextFormField({
-    required TextEditingController controller,
-    required String label,
-    required String validator,
-    int maxLines = 1,
-  }) {
-    return TextFormField(
-      controller: controller,
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: TextStyle(color: Colors.white),
-        focusedBorder: OutlineInputBorder(
-          borderSide: BorderSide(color: Colors.white, width: 2.0),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderSide: BorderSide(color: Colors.white, width: 1.0),
-        ),
-      ),
-      validator: (value) {
-        if (value != null && value.isEmpty && validator.isNotEmpty) {
-          return validator;
-        }
-        return null;
-      },
-      maxLines: maxLines,
+  Future<void> updateContact(EmergencyContact c) async {
+    final response = await http.put(
+      Uri.parse("$baseUrl/emergency-contacts/${c.userId}/${c.id}"),
+      headers: _headers(),
+      body: jsonEncode(c.toJson()),
     );
+    if (response.statusCode != 200) {
+      throw Exception("Failed to update: ${response.body}");
+    }
+  }
+
+  Future<void> deleteContact(String userId, String id) async {
+    final response = await http.delete(
+      Uri.parse("$baseUrl/emergency-contacts/$userId/$id"),
+      headers: _headers(),
+    );
+    if (response.statusCode != 200) {
+      throw Exception("Failed to delete: ${response.body}");
+    }
   }
 }
 
-class EmergencyContactCard extends StatelessWidget {
-  final EmergencyContact emergencyContact;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
+class MyEmergencyContactScreen extends StatefulWidget {
+  final String token;
+  final String userId;
+  final bool isFacility;
+  final String facilityId;
+  final String facilityType;
+  final bool isdoctor;
 
-  EmergencyContactCard({
-    required this.emergencyContact,
-    required this.onEdit,
-    required this.onDelete,
+  const MyEmergencyContactScreen({
+    super.key,
+    required this.token,
+    required this.userId,
+    required this.isFacility,
+    required this.facilityId,
+    required this.facilityType,
+    required this.isdoctor,
   });
 
   @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-      color: Colors.white,
-      elevation: 4,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: ListTile(
-        contentPadding: EdgeInsets.all(16),
-        title: Container(
-          padding: EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: Color(0xFF043459), // Background color for full name
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Text(
-            emergencyContact.fullName,
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 18,
-            ),
+  State<MyEmergencyContactScreen> createState() => _MyEmergencyContactScreenState();
+}
+
+class _MyEmergencyContactScreenState extends State<MyEmergencyContactScreen> {
+  late EmergencyContactApiService apiService;
+  late Future<List<EmergencyContact>> contactsFuture;
+
+  final _formKey = GlobalKey<FormState>();
+  final _fullNameController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _relationshipController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    apiService = EmergencyContactApiService(token: widget.token);
+    _loadContacts();
+  }
+
+  void _loadContacts() {
+    setState(() {
+      contactsFuture = apiService.fetchContacts(widget.userId);
+    });
+  }
+
+  void _showAddOrEditDialog({EmergencyContact? contact}) {
+    final provider = Provider.of<TranslationProvider>(context, listen: false);
+    final t = provider.t;
+    final isEditing = contact != null;
+    _fullNameController.text = contact?.fullName ?? '';
+    _phoneController.text = contact?.phoneNumber ?? '';
+    _relationshipController.text = contact?.relationship ?? '';
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(isEditing ? t('edit_contact') : t('add_contact')),
+        content: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: _fullNameController,
+                decoration: InputDecoration(labelText: t('full_name')),
+                validator: _required,
+              ),
+              TextFormField(
+                controller: _phoneController,
+                decoration: InputDecoration(labelText: t('phone')),
+                validator: _required,
+              ),
+              TextFormField(
+                controller: _relationshipController,
+                decoration: InputDecoration(labelText: t('relationship')),
+                validator: _required,
+              ),
+            ],
           ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(t('cancel')),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (_formKey.currentState!.validate()) {
+                final newC = EmergencyContact(
+                  id: contact?.id,
+                  userId: widget.userId,
+                  fullName: _fullNameController.text,
+                  phoneNumber: _phoneController.text,
+                  relationship: _relationshipController.text,
+                );
+                isEditing
+                    ? await apiService.updateContact(newC)
+                    : await apiService.createContact(newC);
+                Navigator.pop(context);
+                _loadContacts();
+              }
+            },
+            child: Text(t('save')),
+          )
+        ],
+      ),
+    );
+  }
+
+  String? _required(String? v) => v == null || v.isEmpty ? 'Required' : null;
+
+  void _confirmDelete(EmergencyContact c) {
+    final t = Provider.of<TranslationProvider>(context, listen: false).t;
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(t('delete_contact')),
+        content: Text(t('delete_confirm')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(t('cancel')),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              await apiService.deleteContact(widget.userId, c.id!);
+              Navigator.pop(context);
+              _loadContacts();
+            },
+            child: Text(t('delete')),
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCard(EmergencyContact c) {
+    final t = Provider.of<TranslationProvider>(context).t;
+    return Card(
+      margin: const EdgeInsets.all(12),
+      child: ListTile(
+        title: Text(c.fullName, style: const TextStyle(fontWeight: FontWeight.bold)),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Container for Relationship and Phone Number
-            Container(
-              padding: EdgeInsets.all(8),
-              margin: EdgeInsets.only(top: 8),
-              decoration: BoxDecoration(
-                color: Color(0xFF021229),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        "Relationship: ",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text(emergencyContact.relationship, style: TextStyle(color: Colors.white)),
-                    ],
-                  ),
-                  SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Text(
-                        "Phone Number: ",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Expanded(
-                        child: Text(
-                          emergencyContact.phoneNumber,
-                          style: TextStyle(color: Colors.white),
-                          overflow: TextOverflow.ellipsis, // Ensures the text doesn't overflow
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+            Text("${t('phone')}: ${c.phoneNumber}"),
+            Text("${t('relationship')}: ${c.relationship}"),
           ],
         ),
-        trailing: Row(
+        trailing: (!widget.isFacility && !widget.isdoctor)
+            ? Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             IconButton(
-              icon: Icon(Icons.edit, color: Colors.blue),
-              onPressed: onEdit,
+              icon: const Icon(Icons.edit, color: Colors.blue),
+              onPressed: () => _showAddOrEditDialog(contact: c),
             ),
             IconButton(
-              icon: Icon(Icons.delete, color: Colors.red),
-              onPressed: onDelete,
+              icon: const Icon(Icons.delete, color: Colors.red),
+              onPressed: () => _confirmDelete(c),
             ),
           ],
-        ),
+        )
+            : null,
       ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = Provider.of<TranslationProvider>(context);
+    final t = provider.t;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(t("emergency_contacts")),
+        backgroundColor: Colors.blue,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.language),
+            onPressed: () async {
+              String newLang = provider.currentLanguage == 'en' ? 'ar' : 'en';
+              await provider.load(newLang);
+            },
+          ),
+        ],
+      ),
+      body: FutureBuilder<List<EmergencyContact>>(
+        future: contactsFuture,
+        builder: (_, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text("Error: ${snapshot.error}"));
+          }
+          final data = snapshot.data ?? [];
+          if (data.isEmpty) {
+            return Center(child: Text(t("no_contacts")));
+          }
+          return ListView(children: data.map(_buildCard).toList());
+        },
+      ),
+      floatingActionButton: (!widget.isFacility && !widget.isdoctor)
+          ? FloatingActionButton(
+        backgroundColor: Colors.blue,
+        onPressed: () => _showAddOrEditDialog(),
+        child: const Icon(Icons.add),
+      )
+          : null,
     );
   }
 }

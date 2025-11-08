@@ -1,214 +1,363 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart'; // Import for date parsing and formatting
+import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+import 'package:provider/provider.dart';
+import 'translation_provider.dart';
 
-class MyDetails extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: MyDetailsScreen(),
+class UserDetails {
+  String nationalId;
+  String password;
+  String fullName;
+  String? profilePhoto;
+  String birthdate;
+  String phoneNumber;
+  String email;
+  String gender;
+  String bloodGroup;
+  String maritalStatus;
+  String address;
+  String region;
+  String city;
+  bool currentSmoker;
+  int cigsPerDay;
+  int age;
+
+  UserDetails({
+    required this.nationalId,
+    required this.password,
+    required this.fullName,
+    this.profilePhoto,
+    required this.birthdate,
+    required this.phoneNumber,
+    required this.email,
+    required this.gender,
+    required this.bloodGroup,
+    required this.maritalStatus,
+    required this.address,
+    required this.region,
+    required this.city,
+    required this.currentSmoker,
+    required this.cigsPerDay,
+    required this.age,
+  });
+
+  factory UserDetails.fromJson(Map<String, dynamic> json) {
+    return UserDetails(
+      nationalId: json['national_id'] ?? '',
+      password: json['password'] ?? '',
+      fullName: json['full_name'] ?? '',
+      profilePhoto: json['profile_photo'],
+      birthdate: json['birthdate'] ?? '',
+      phoneNumber: json['phone_number'] ?? '',
+      email: json['email'] ?? '',
+      gender: json['gender'] ?? '',
+      bloodGroup: json['blood_group'] ?? '',
+      maritalStatus: json['marital_status'] ?? '',
+      address: json['address'] ?? '',
+      region: json['region'] ?? '',
+      city: json['city'] ?? '',
+      currentSmoker: json['current_smoker'] ?? false,
+      cigsPerDay: json['cigs_per_day'] ?? 0,
+      age: json['age'] ?? 0,
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'national_id': nationalId,
+      'password': password,
+      'full_name': fullName,
+      'profile_photo': profilePhoto,
+      'birthdate': birthdate,
+      'phone_number': phoneNumber,
+      'email': email,
+      'gender': gender,
+      'blood_group': bloodGroup,
+      'marital_status': maritalStatus,
+      'address': address,
+      'region': region,
+      'city': city,
+      'current_smoker': currentSmoker,
+      'cigs_per_day': cigsPerDay,
+    };
   }
 }
 
+class UserApiService {
+  final String baseUrl = "http://10.0.2.2:8000";
+  final String token;
+
+  UserApiService({required this.token});
+
+  Future<UserDetails> fetchUserDetails(String userId) async {
+    final response = await http.get(
+      Uri.parse("$baseUrl/users/$userId"),
+      headers: {
+        "Authorization": "Bearer $token",
+        "Content-Type": "application/json",
+      },
+    );
+    if (response.statusCode == 200) {
+      return UserDetails.fromJson(jsonDecode(response.body));
+    } else {
+      throw Exception("Failed to load user: ${response.body}");
+    }
+  }
+
+  Future<UserDetails> updateUserDetails(String userId, Map<String, dynamic> updatedData) async {
+    final response = await http.put(
+      Uri.parse("$baseUrl/users/$userId"),
+      headers: {
+        "Authorization": "Bearer $token",
+        "Content-Type": "application/json",
+      },
+      body: jsonEncode(updatedData),
+    );
+    if (response.statusCode == 200) {
+      return UserDetails.fromJson(jsonDecode(response.body));
+    } else {
+      throw Exception("Update failed: ${response.body}");
+    }
+  }
+}
+
+ImageProvider getProfileImage(String? imageString) {
+  if (imageString == null || imageString.isEmpty) return const AssetImage('Images/man.jpg');
+  if (imageString.startsWith("http")) return NetworkImage(imageString);
+  if (imageString.startsWith("data:image")) imageString = imageString.split(',').last;
+  return MemoryImage(base64Decode(imageString));
+}
+
 class MyDetailsScreen extends StatefulWidget {
+  final String token;
+  final String userId;
+  final bool isfacility;
+  final bool isdoctor;
+
+  const MyDetailsScreen({
+    Key? key,
+    required this.token,
+    required this.userId,
+    required this.isfacility,
+    required this.isdoctor,
+  }) : super(key: key);
+
   @override
   _MyDetailsScreenState createState() => _MyDetailsScreenState();
 }
 
 class _MyDetailsScreenState extends State<MyDetailsScreen> {
-  // Define dark blue and other colors
-  final Color darkBlue = const Color(0xFF021229);
-  final Color deepDarkBlue = const Color(0xFF043459);
-  // Removed lightPink and replaced with a gradient background
-
-  // Details map for user information.
-  Map<String, String> details = {
-    'Full Name': 'Tony Magdy',
-    'National ID': '12345678901234',
-    'Email': 'tony.magdy@example.com',
-    'Phone Number': '+20 123 456 7890',
-    'Birthday': '01-01-2002',
-    'Address': '123 Street, City, Egypt',
-    'City': 'Alexandria',
-    'Gender': 'Male',
-    'Marital Status': 'Single',
-  };
-
-  // Icon mapping for each detail.
-  Map<String, IconData> icons = {
-    'Full Name': Icons.person,
-    'National ID': Icons.credit_card,
-    'Email': Icons.email,
-    'Phone Number': Icons.phone,
-    'Birthday': Icons.cake,
-    'Address': Icons.home,
-    'City': Icons.location_city,
-    'Gender': Icons.transgender,
-    'Marital Status': Icons.group,
-    'Age': Icons.calendar_today, // Icon for age
-  };
+  late Future<UserDetails> userDetailsFuture;
+  UserDetails? details;
+  File? _newProfileImage;
+  static const platform = MethodChannel('com.example.myapp/image_picker');
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        // AppBar with white background and dark blue text/icons.
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: darkBlue),
-          onPressed: () {
-            Navigator.pop(context);
-          },
-        ),
-        title: Text("My Details", style: TextStyle(color: darkBlue)),
-        backgroundColor: Colors.white,
-        elevation: 1,
-      ),
-      body: Container(
-        // New background: gradient from light blue to white.
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              Color(0xFFE3F2FD), // Light blue
-              Colors.white,
-            ],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              children: [
-                // User details section with avatar and full name.
-                Center(
-                  child: Column(
-                    children: [
-                      CircleAvatar(
-                        radius: 50,
-                        backgroundImage: const AssetImage(
-                            'Images/man.png'), // Replace with your actual image.
-                        backgroundColor: Colors.white,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        details['Full Name']!,
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: darkBlue,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-                // Build the list of detail cards.
-                ..._buildDetailsList(),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+  void initState() {
+    super.initState();
+    userDetailsFuture = _fetchUserDetails();
   }
 
-  /// Build a list of detail cards, inserting age after the birthday entry.
-  List<Widget> _buildDetailsList() {
-    List<Widget> detailCards = [];
-    details.forEach((key, value) {
-      detailCards.add(_buildDetailCard(key, value));
-      if (key == 'Birthday') {
-        // Insert Age immediately after Birthday.
-        detailCards.add(
-            _buildDetailCard('Age', _calculateAge(details['Birthday']!)));
-      }
-    });
-    return detailCards;
+  Future<UserDetails> _fetchUserDetails() async {
+    final apiService = UserApiService(token: widget.token);
+    details = await apiService.fetchUserDetails(widget.userId);
+    return details!;
   }
 
-  /// Build a single detail card.
-  Widget _buildDetailCard(String key, String value) {
-    return Card(
-      elevation: 3,
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      child: ListTile(
-        title: Text(
-          key,
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: deepDarkBlue, // Title in dark blue.
-          ),
-        ),
-        subtitle: Text(
-          value,
-          style: TextStyle(
-            fontSize: 14,
-            color: darkBlue, // Subtitle in dark blue.
-          ),
-        ),
-        leading: Icon(
-          icons[key] ?? Icons.info_outline,
-          color: deepDarkBlue, // Icon in dark blue.
-        ),
-        trailing: key != 'Age'
-            ? IconButton(
-          icon: Icon(Icons.edit, color: deepDarkBlue),
-          onPressed: () => _editDetail(context, key, value),
-        )
-            : null, // No edit icon for Age.
-      ),
-    );
-  }
-
-  /// Calculate age from the birthday string.
-  String _calculateAge(String birthday) {
+  Future<void> _pickNewImage() async {
     try {
-      DateTime birthDate = DateFormat('dd-MM-yyyy').parse(birthday);
-      DateTime today = DateTime.now();
-      int age = today.year - birthDate.year;
-      if (today.month < birthDate.month ||
-          (today.month == birthDate.month && today.day < birthDate.day)) {
-        age--; // Adjust if birthday hasn't occurred yet this year.
+      final String? imagePath = await platform.invokeMethod('pickImage');
+      if (imagePath != null) {
+        String realPath = imagePath.startsWith('content://')
+            ? await platform.invokeMethod('getAbsolutePath', imagePath)
+            : imagePath;
+        setState(() {
+          _newProfileImage = File(realPath);
+        });
+        await _uploadNewProfileImage();
       }
-      return '$age years';
-    } catch (e) {
-      return 'Invalid date';
+    } on PlatformException catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Image picker failed: ${e.message}")));
     }
   }
 
-  /// Display a dialog to edit a detail.
-  void _editDetail(BuildContext context, String key, String currentValue) {
-    TextEditingController controller =
-    TextEditingController(text: currentValue);
+  Future<void> _uploadNewProfileImage() async {
+    if (_newProfileImage == null || details == null) return;
+
+    final bytes = await _newProfileImage!.readAsBytes();
+    final base64Image = base64Encode(bytes);
+
+    Map<String, dynamic> updatedData = details!.toJson();
+    updatedData['profile_photo'] = base64Image;
+
+    try {
+      final apiService = UserApiService(token: widget.token);
+      details = await apiService.updateUserDetails(widget.userId, updatedData);
+      setState(() {
+        _newProfileImage = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Profile image updated")));
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Failed to update image: $e")));
+    }
+  }
+
+  Future<void> _updateDetail(String apiKey, String newValue) async {
+    final t = context.read<TranslationProvider>().t;
+    if (details == null || widget.isfacility || widget.isdoctor || apiKey == "doctoremail" || apiKey == "age") return;
+
+    Map<String, dynamic> updatedData = details!.toJson();
+    updatedData[apiKey] = apiKey == 'current_smoker'
+        ? (newValue.toLowerCase() == 'yes' || newValue == "نعم")
+        : (apiKey == 'cigs_per_day' ? int.tryParse(newValue) ?? 0 : newValue);
+
+    try {
+      final apiService = UserApiService(token: widget.token);
+      details = await apiService.updateUserDetails(widget.userId, updatedData);
+      setState(() {});
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t("update_failed"))));
+    }
+  }
+
+  void _editDetail(String labelKey, String apiKey, String currentValue) {
+    final t = context.read<TranslationProvider>().t;
+    final controller = TextEditingController(text: apiKey == "password" ? "" : currentValue);
+    final obscure = apiKey == "password";
 
     showDialog(
       context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text("Edit $key", style: TextStyle(color: darkBlue)),
-          content: TextField(
-            controller: controller,
-            decoration: InputDecoration(labelText: key),
+      builder: (_) => AlertDialog(
+        title: Text("${t("edit")} ${t(apiKey)}"),
+        content: TextField(
+          controller: controller,
+          obscureText: obscure,
+          decoration: InputDecoration(labelText: t(apiKey)),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: Text(t("cancel"))),
+          ElevatedButton(
+            onPressed: () async {
+              if (apiKey == "password" && controller.text.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t("password_empty"))));
+                return;
+              }
+              await _updateDetail(apiKey, controller.text);
+              Navigator.pop(context);
+            },
+            child: Text(t("save")),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text("Cancel", style: TextStyle(color: darkBlue)),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildDetailsList() {
+    final t = context.watch<TranslationProvider>().t;
+
+    final Map<String, String> translatedKeyToApiKey = {
+      t("full_name"): "full_name",
+      t("national_id"): "national_id",
+      t("password"): "password",
+      t("email"): "email",
+      t("birthdate"): "birthdate",
+      t("phone_number"): "phone_number",
+      t("gender"): "gender",
+      t("blood_group"): "blood_group",
+      t("marital_status"): "marital_status",
+      t("address"): "address",
+      t("region"): "region",
+      t("city"): "city",
+      t("current_smoker"): "current_smoker",
+      t("cigs_per_day"): "cigs_per_day",
+    };
+
+    return translatedKeyToApiKey.entries.map((entry) {
+      String label = entry.key;
+      String apiKey = entry.value;
+      String value = details!.toJson()[apiKey]?.toString() ?? '';
+      return _buildDetailCard(label, apiKey, value);
+    }).toList()
+      ..add(_buildDetailCard(t("age"), "age", details!.age.toString()));
+  }
+
+  Widget _buildDetailCard(String label, String apiKey, String value) {
+    final canEdit = !(widget.isfacility || widget.isdoctor) && apiKey != "doctoremail" && apiKey != "age";
+
+    return Card(
+      elevation: 2,
+      child: ListTile(
+        leading: const Icon(Icons.info_outline),
+        title: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Text(apiKey == "password" ? "********" : value),
+        trailing: canEdit
+            ? IconButton(
+          icon: const Icon(Icons.edit),
+          onPressed: () => _editDetail(label, apiKey, value),
+        )
+            : null,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.watch<TranslationProvider>().t;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(t("personal_info")),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.language),
+            onPressed: () async {
+              final provider = Provider.of<TranslationProvider>(context, listen: false);
+              final newLang = provider.currentLanguage == 'en' ? 'ar' : 'en';
+              await provider.load(newLang);
+              setState(() {});
+            },
+          )
+        ],
+      ),
+      body: FutureBuilder<UserDetails>(
+        future: userDetailsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+          if (snapshot.hasError) return Center(child: Text("Error: ${snapshot.error}"));
+          if (!snapshot.hasData) return Center(child: Text(t("no_data")));
+
+          details = snapshot.data!;
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              children: [
+                GestureDetector(
+                  onTap: widget.isfacility || widget.isdoctor ? null : _pickNewImage,
+                  child: CircleAvatar(
+                    radius: 50,
+                    backgroundImage: _newProfileImage != null
+                        ? FileImage(_newProfileImage!)
+                        : getProfileImage(details!.profilePhoto),
+                    backgroundColor: Colors.white,
+                    child: widget.isfacility || widget.isdoctor
+                        ? null
+                        : const Align(
+                      alignment: Alignment.bottomRight,
+                      child: Icon(Icons.edit, size: 24, color: Colors.white),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(details!.fullName, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 20),
+                ..._buildDetailsList(),
+              ],
             ),
-            ElevatedButton(
-              onPressed: () {
-                setState(() {
-                  details[key] = controller.text;
-                });
-                Navigator.of(context).pop();
-              },
-              child: Text("Save", style: TextStyle(color: darkBlue)),
-            ),
-          ],
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }

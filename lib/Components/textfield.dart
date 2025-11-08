@@ -7,7 +7,7 @@ Padding buildTextFormField({
   TextInputType? keyboardType,
   required Widget prefix,
   IconButton? suffix,
-  required String? Function(String?)? validator,
+  String? Function(String?)? validator,
   bool obscureText = false,
   Future<Null> Function()? onTap,
 

@@ -1,15 +1,15 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutterappmedigo/Login.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
+import 'package:provider/provider.dart';
+import 'translation_provider.dart';
+import 'Login.dart';
 
 class OnBoarding {
   final String title;
-  final String image;
   final String body;
-  final String textButton;
+  final String image;
 
-  OnBoarding(this.title, this.image, this.body, this.textButton);
+  OnBoarding(this.title, this.body, this.image);
 }
 
 class OnBoardingScreen extends StatefulWidget {
@@ -23,27 +23,18 @@ class _OnBoardingScreenState extends State<OnBoardingScreen> {
   final PageController _pageController = PageController();
   int currentIndex = 0;
 
-  List<OnBoarding> getOnboardList() {
+  List<OnBoarding> getOnboardList(BuildContext context) {
+    final t = Provider.of<TranslationProvider>(context, listen: false).t;
+
     return [
-      OnBoarding(
-        'Welcome to MediGO',
-        'Images/image1.png',
-        'Your personal health assistant. Manage your medical records with ease and security',
-        'Next',
-      ),
-      OnBoarding(
-        'Track and Analyze',
-        'Images/image2.png',
-        'Keep track of your vital signs, symptoms, and more. Get actionable health insights anytime, anywhere',
-        'Next',
-      ),
-      OnBoarding(
-        'Secure and Private',
-        'Images/image3.png',
-        'Your data is safe with us. We prioritize security and privacy for all users',
-        'Get Started',
-      ),
+      OnBoarding(t("onboarding_title_1"), t("onboarding_body_1"), 'Images/image1.png'),
+      OnBoarding(t("onboarding_title_2"), t("onboarding_body_2"), 'Images/image2.png'),
+      OnBoarding(t("onboarding_title_3"), t("onboarding_body_3"), 'Images/image3.png'),
     ];
+  }
+
+  bool isArabicText(String text) {
+    return RegExp(r'[\u0600-\u06FF]').hasMatch(text);
   }
 
   @override
@@ -65,26 +56,15 @@ class _OnBoardingScreenState extends State<OnBoardingScreen> {
     super.dispose();
   }
 
-  // Build page content without heartbeat animation
   Widget buildPageContent(OnBoarding data) {
+    final bool isArabic = isArabicText(data.title);
+
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 500),
-      transitionBuilder: (child, animation) {
-        final slideAnimation = Tween<Offset>(
-          begin: const Offset(0.0, 0.2),
-          end: Offset.zero,
-        ).animate(animation);
-        return FadeTransition(
-          opacity: animation,
-          child: SlideTransition(
-            position: slideAnimation,
-            child: child,
-          ),
-        );
-      },
       child: Container(
         key: ValueKey<String>(data.title),
         margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        padding: const EdgeInsets.all(16.0),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(30),
@@ -96,16 +76,15 @@ class _OnBoardingScreenState extends State<OnBoardingScreen> {
             ),
           ],
         ),
-        padding: const EdgeInsets.all(16.0),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Removed heartbeat animation, now just a plain image
             Image.asset(data.image),
             const SizedBox(height: 10),
             Text(
               data.title,
               textAlign: TextAlign.center,
+              textDirection: isArabic ? TextDirection.rtl : TextDirection.ltr,
               style: const TextStyle(
                 fontSize: 30,
                 fontWeight: FontWeight.bold,
@@ -116,6 +95,7 @@ class _OnBoardingScreenState extends State<OnBoardingScreen> {
             Text(
               data.body,
               textAlign: TextAlign.center,
+              textDirection: isArabic ? TextDirection.rtl : TextDirection.ltr,
               style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -130,11 +110,14 @@ class _OnBoardingScreenState extends State<OnBoardingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final onboardList = getOnboardList();
+    final t = Provider.of<TranslationProvider>(context).t;
+    final onboardList = getOnboardList(context);
+    final isArabic = isArabicText(onboardList[0].title);
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: PreferredSize(
-        preferredSize: Size.fromHeight(kToolbarHeight),
+        preferredSize: const Size.fromHeight(kToolbarHeight),
         child: AppBar(
           title: Text(
             '${currentIndex + 1}/${onboardList.length}',
@@ -143,18 +126,26 @@ class _OnBoardingScreenState extends State<OnBoardingScreen> {
           backgroundColor: Colors.white,
           elevation: 1,
           actions: [
+            IconButton(
+              icon: const Icon(Icons.language, color: Color(0xFF0288D1)),
+              tooltip: 'Switch Language',
+              onPressed: () async {
+                final provider = Provider.of<TranslationProvider>(context, listen: false);
+                final newLocale = isArabic ? 'en' : 'ar';
+                await provider.load(newLocale);
+                setState(() {});
+              },
+            ),
             TextButton(
               onPressed: () {
                 Navigator.pushReplacement(
                   context,
-                  MaterialPageRoute(
-                      builder: (context) => LoginScreen(text1: '')),
+                  MaterialPageRoute(builder: (context) => LoginScreen()),
                 );
               },
-              // Updated Skip button color to match the Prev button color
-              child: const Text(
-                'Skip',
-                style: TextStyle(color: Color(0xFF0288D1), fontSize: 18),
+              child: Text(
+                t("skip"),
+                style: const TextStyle(color: Color(0xFF0288D1), fontSize: 18),
               ),
             ),
           ],
@@ -167,9 +158,9 @@ class _OnBoardingScreenState extends State<OnBoardingScreen> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Color(0xFFE3F2FD), // Light blue
-              Color(0xFFBBDEFB), // Soft blue
-              Color(0xFFFFFFFF), // White
+              Color(0xFFE3F2FD),
+              Color(0xFFBBDEFB),
+              Color(0xFFFFFFFF),
             ],
           ),
         ),
@@ -180,15 +171,12 @@ class _OnBoardingScreenState extends State<OnBoardingScreen> {
                 controller: _pageController,
                 itemCount: onboardList.length,
                 itemBuilder: (context, index) {
-                  return Center(
-                    child: buildPageContent(onboardList[index]),
-                  );
+                  return Center(child: buildPageContent(onboardList[index]));
                 },
               ),
             ),
             Padding(
-              padding:
-              const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20),
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -200,9 +188,9 @@ class _OnBoardingScreenState extends State<OnBoardingScreen> {
                           curve: Curves.easeInOut,
                         );
                       },
-                      child: const Text(
-                        'Prev',
-                        style: TextStyle(color: Color(0xFF0288D1), fontSize: 18),
+                      child: Text(
+                        t("previous"),
+                        style: const TextStyle(color: Color(0xFF0288D1), fontSize: 18),
                       ),
                     )
                   else
@@ -222,9 +210,7 @@ class _OnBoardingScreenState extends State<OnBoardingScreen> {
                       if (currentIndex == onboardList.length - 1) {
                         Navigator.pushReplacement(
                           context,
-                          MaterialPageRoute(
-                              builder: (context) =>
-                                  LoginScreen(text1: '')),
+                          MaterialPageRoute(builder: (context) => LoginScreen()),
                         );
                       } else {
                         _pageController.nextPage(
@@ -234,9 +220,10 @@ class _OnBoardingScreenState extends State<OnBoardingScreen> {
                       }
                     },
                     child: Text(
-                      onboardList[currentIndex].textButton,
-                      style:
-                      const TextStyle(color: Color(0xFF0288D1), fontSize: 18),
+                      currentIndex == onboardList.length - 1
+                          ? t("get_started")
+                          : t("next"),
+                      style: const TextStyle(color: Color(0xFF0288D1), fontSize: 18),
                     ),
                   ),
                 ],

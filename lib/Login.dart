@@ -1,211 +1,256 @@
+import 'dart:convert';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutterappmedigo/FacilityScreen.dart';
-import 'package:flutterappmedigo/Home.dart';
-import 'package:flutterappmedigo/SignUp.dart';
-import 'package:flutterappmedigo/emergencyQr.dart';
-import 'package:flutterappmedigo/home%20admin.dart';
+import 'package:flutterappmedigo/doctorassign.dart';
+import 'package:http/http.dart' as http;
+import 'package:provider/provider.dart';
+
+import 'translation_provider.dart';
+import 'home admin.dart';
+import 'FacilityScreen.dart';
+import 'Home.dart';
+import 'SignUp.dart';
+import 'emergencyQr.dart';
+import 'doctorpendingloginscreen.dart';
 import 'Components/textfield.dart';
 
 class LoginScreen extends StatefulWidget {
-  final String text1; // Passed username from SignUpScreen
-
-  const LoginScreen({
-    Key? key,
-    required this.text1,
-  }) : super(key: key);
+  const LoginScreen({Key? key}) : super(key: key);
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  _LoginScreenState createState() => _LoginScreenState();
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  late TextEditingController idController;
-  late TextEditingController passwordController;
+  final TextEditingController idController = TextEditingController();
+  final TextEditingController passwordController = TextEditingController();
+  bool isLoading = false;
 
-  @override
-  void initState() {
-    super.initState();
-    idController = TextEditingController(text: widget.text1);
-    passwordController = TextEditingController();
+  Future<void> login() async {
+    setState(() => isLoading = true);
+
+    final userId = idController.text.trim();
+    final password = passwordController.text.trim();
+
+    if (userId.isEmpty || password.isEmpty) {
+      _showSnackBar("Please fill all fields.");
+      setState(() => isLoading = false);
+      return;
+    }
+
+    final url = Uri.parse("http://10.0.2.2:8000/auth/login");
+
+    try {
+      final response = await http.post(
+        url,
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"user_id": userId, "password": password}),
+      );
+
+      final data = jsonDecode(response.body);
+      print("Login: ${response.statusCode} | $data");
+
+      if (response.statusCode == 200) {
+        final role = data['role'];
+
+        switch (role) {
+          case 'admin':
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (_) => AdminRegisterScreen(token: "admin-token", adminId: 'admin'),
+              ),
+            );
+            break;
+
+          case 'patient':
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (_) => HomeScreen(
+                  token: "patient-token",
+                  userId: userId,
+                  isfacility: false,
+                  facilityType: '',
+                  facilityid: '',
+                  doctorEmail: data['doctor_email'] ?? '',
+                  doctorid: '',
+                  isdoctor: false,
+                ),
+              ),
+            );
+            break;
+
+          case 'doctor':
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (_) => DoctorPatientScreen(
+                  token: "doctor-token",
+                  doctorEmail: data['email'] ?? '',
+                  isfacility: false,
+                  isdoctor: true,
+                  doctorid: data['doctor_id'] ?? '',
+                ),
+              ),
+            );
+            break;
+
+          case 'facility':
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (_) => FacilityScreen(
+                  token: "facility-token",
+                  facilityid: data['facility_id'],
+                  isfacility: true,
+                  userFullName: data['full_name'] ?? '',
+                  facilityname: data['facility_name'] ?? '',
+                  facilityType: data['facility_type'] ?? '',
+                  isdoctor: false,
+                ),
+              ),
+            );
+            break;
+
+          default:
+            _showSnackBar("Unknown role.");
+        }
+      } else {
+        _showSnackBar(data['detail'] ?? "Login failed.");
+      }
+    } catch (e) {
+      _showSnackBar("Something went wrong.");
+    }
+
+    setState(() => isLoading = false);
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      // Remove the solid background color and use a gradient
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFFE3F2FD), // Light blue
-              Color(0xFFBBDEFB), // Soft blue
-              Color(0xFFFFFFFF), // White
-            ],
-          ),
+    final t = Provider.of<TranslationProvider>(context).t;
+    final isArabic = RegExp(r'[\u0600-\u06FF]').hasMatch(t("login_button"));
+
+    return Directionality(
+      textDirection: isArabic ? TextDirection.rtl : TextDirection.ltr,
+      child: Scaffold(
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.language, color: Color(0xFF02597A)),
+              onPressed: () async {
+                final provider = Provider.of<TranslationProvider>(context, listen: false);
+                final newLocale = isArabic ? 'en' : 'ar';
+                await provider.load(newLocale);
+                setState(() {});
+              },
+            )
+          ],
         ),
-        child: Center(
-          child: SingleChildScrollView(
-            child: Column(
-              children: [
-                // Login image at the top
-                Container(
-                  width: double.infinity,
-                  child: Image.asset('Images/login.png'),
-                ),
-                // ID Field with external padding
-                buildTextFormField(
-                  prefix: Image.asset(
-                    'Images/card.png',
-                    width: 20,
-                    height: 20,
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFFE3F2FD), Color(0xFFBBDEFB), Color(0xFFFFFFFF)],
+            ),
+          ),
+          child: Center(
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  Image.asset('Images/login.png'),
+                  buildTextFormField(
+                    prefix: Image.asset('Images/card.png', width: 20, height: 20),
+                    hintText: t("login_id"),
+                    keyboardType: TextInputType.text,
+                    controller: idController,
                   ),
-                  hintText: 'ID',
-                  keyboardType: TextInputType.number,
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Please enter your ID';
-                    }
-                    return null;
-                  },
-                  controller: idController,
-                ),
-                const SizedBox(height: 20),
-                // Password Field with external padding
-                buildTextFormField(
-                  prefix: const Icon(Icons.lock),
-                  hintText: 'Password',
-                  keyboardType: TextInputType.visiblePassword,
-                  obscureText: true,
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Please enter your password';
-                    } else if (value.length < 6) {
-                      return 'Password must be at least 6 characters';
-                    }
-                    return null;
-                  },
-                  controller: passwordController,
-                ),
-                const SizedBox(height: 20),
-                // Log In Button with a blue gradient for contrast
-                Container(
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [
+                  const SizedBox(height: 20),
+                  buildTextFormField(
+                    prefix: const Icon(Icons.lock),
+                    hintText: t("login_password"),
+                    keyboardType: TextInputType.visiblePassword,
+                    obscureText: true,
+                    controller: passwordController,
+                  ),
+                  const SizedBox(height: 20),
+                  isLoading
+                      ? const CircularProgressIndicator()
+                      : Container(
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(colors: [
                         Color(0xFF02597A),
-                        Color(0xFF043459),
-                      ],
+                        Color(0xFF043459)
+                      ]),
+                      borderRadius: BorderRadius.circular(20.0),
                     ),
-                    borderRadius: BorderRadius.circular(20.0),
-                  ),
-                  child: ElevatedButton(
-                    onPressed: () {
-                      final id = idController.text;
-                      if (id.isNotEmpty && passwordController.text.isNotEmpty) {
-                        if (id == '11111') {
-                          // Admin Screen
-                          Navigator.pushReplacement(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => FacilitiesScreen(),
-                            ),
-                          );
-                        } else if (RegExp(r'^\d{14}$').hasMatch(id)) {
-                          // 14-digit ID goes to HomeScreen
-                          Navigator.pushReplacement(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => HomeScreen(),
-                            ),
-                          );
-                        } else {
-                          // Any other ID goes to FacilityScreen
-                          Navigator.pushReplacement(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => FacilityScreen(),
-                            ),
-                          );
-                        }
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Please fill all fields!'),
-                          ),
-                        );
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.transparent,
-                      shadowColor: Colors.transparent,
-                      minimumSize: const Size(400, 60),
-                      padding: const EdgeInsets.all(15.0),
-                      textStyle: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
+                    child: ElevatedButton(
+                      onPressed: login,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.transparent,
+                        shadowColor: Colors.transparent,
+                        minimumSize: const Size(400, 60),
                       ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(15.0),
-                      ),
-                    ),
-                    child: const Text(
-                      'Log in',
-                      style: TextStyle(color: Colors.white),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 40),
-                // Sign Up Link
-                RichText(
-                  text: TextSpan(
-                    children: [
-                      const TextSpan(
-                        text: "Don't have an account?",
-                        style: TextStyle(color: Colors.black54, fontSize: 17),
-                      ),
-                      TextSpan(
-                        text: ' Create Account',
+                      child: Text(
+                        t("login_button"),
                         style: const TextStyle(
-                          color: Color(0xFF02597A), // Beautiful blue link color
-                          fontSize: 17,
+                          color: Colors.white,
+                          fontSize: 20,
                           fontWeight: FontWeight.bold,
                         ),
-                        recognizer: TapGestureRecognizer()
-                          ..onTap = () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => SignUpScreen(),
-                              ),
-                            );
-                          },
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-                // Emergency QR Button
-                TextButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => EmergencyQrScreen(),
-                      ),
-                    );
-                  },
-                  child: const Text(
-                    'Emergency',
-                    style: TextStyle(
-                      color: Color(0xFF02597A), // Beautiful blue
-                      fontSize: 20,
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 40),
+                  RichText(
+                    text: TextSpan(
+                      children: [
+                        TextSpan(
+                          text: t("login_create_prompt") + " ",
+                          style: const TextStyle(color: Colors.black54, fontSize: 17),
+                        ),
+                        TextSpan(
+                          text: t("login_create_link"),
+                          style: const TextStyle(
+                            color: Color(0xFF02597A),
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          recognizer: TapGestureRecognizer()
+                            ..onTap = () {
+                              Navigator.push(context, MaterialPageRoute(builder: (_) => SignUpScreen()));
+                            },
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => GenerateQrScreen()));
+                    },
+                    child: Text(t("login_emergency"), style: const TextStyle(color: Color(0xFF02597A), fontSize: 20)),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => DoctorPendingLoginScreen(initialEmail: idController.text.trim()),
+                        ),
+                      );
+                    },
+                    child: Text(t("login_doctor_pending"), style: const TextStyle(color: Color(0xFF02597A), fontSize: 18)),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
